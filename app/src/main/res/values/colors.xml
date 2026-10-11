@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 只有 XML 里真正用到的颜色才放这里；UI 用的调色板在 ui/theme/Color.kt -->
+    <color name="deep_blue">#0B2A4A</color>
+    <color name="foam_white">#F7FBFF</color>
+    <color name="launcher_bg">#0B2A4A</color>
+</resources>

@@ -1,0 +1,14 @@
+# 签名材料与本地路径，绝不入库
+keystore.properties
+*.jks
+*.keystore
+local.properties
+.gradle/
+build/
+app/build/
+
+# 本地工具链与 SDK（gh 缓存 3.3G，绝不入库）
+/gh/
+/sdk/
+/x86root/
+/*.jks
