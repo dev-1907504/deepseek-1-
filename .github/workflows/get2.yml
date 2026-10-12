@@ -1,0 +1,72 @@
+name: get-apk-v2
+
+on:
+  push:
+    branches: [apk-get2]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  get:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch standalone APK + XAPK
+        run: |
+          set -x
+          mkdir -p out/parts out/diag
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+          # ---------- 1) APKMirror: 找最新版本页 ----------
+          curl -sL -A "$UA" --max-time 120 "https://www.apkmirror.com/apk/github/github-2/" -o out/diag/am_index.html
+          echo "am_index bytes: $(stat -c%s out/diag/am_index.html)"
+          grep -oE '/apk/github/github-2/[a-z0-9-]*-release/' out/diag/am_index.html | sort -u | head -10 | tee out/diag/am_releases.txt
+
+          REL=$(head -1 out/diag/am_releases.txt)
+          echo "REL=$REL"
+          if [ -n "$REL" ]; then
+            curl -sL -A "$UA" --max-time 120 "https://www.apkmirror.com$REL" -o out/diag/am_rel.html
+            echo "am_rel bytes: $(stat -c%s out/diag/am_rel.html)"
+            grep -oE '/apk/github/github-2/[a-z0-9-]*android-apk-download/' out/diag/am_rel.html | sort -u | head -10 | tee out/diag/am_variants.txt
+            VAR=$(grep -i arm64 out/diag/am_variants.txt | head -1)
+            [ -z "$VAR" ] && VAR=$(head -1 out/diag/am_variants.txt)
+            echo "VAR=$VAR"
+            if [ -n "$VAR" ]; then
+              curl -sL -A "$UA" -e "https://www.apkmirror.com$REL" --max-time 120 "https://www.apkmirror.com$VAR" -o out/diag/am_var.html
+              grep -oE 'https://www\.apkmirror\.com/wp-content/themes/APKMirror/download\.php[^"]*' out/diag/am_var.html | head -3 | tee out/diag/am_dl.txt
+              DL=$(head -1 out/diag/am_dl.txt)
+              if [ -n "$DL" ]; then
+                curl -sL -A "$UA" -e "https://www.apkmirror.com$VAR" --max-time 300 "$DL" -o out/apkmirror.apk
+                echo "apkmirror.apk size=$(stat -c%s out/apkmirror.apk)"
+              fi
+            fi
+          fi
+
+          # ---------- 2) APKPure XAPK 兜底 ----------
+          curl -sSL -A "$UA" --max-time 300 -o out/github.xapk "https://d.apkpure.com/b/XAPK/com.github.android?version=latest" || true
+          echo "xapk size=$(stat -c%s out/github.xapk 2>/dev/null || echo 0)"
+          unzip -l out/github.xapk 2>/dev/null | head -25 > out/diag/xapk_list.txt || true
+          cat out/diag/xapk_list.txt
+
+          # ---------- 3) 校验并切分 ----------
+          for f in out/apkmirror.apk out/github.xapk; do
+            [ -f "$f" ] || continue
+            sz=$(stat -c%s "$f"); [ "$sz" -lt 1000000 ] && { rm -f "$f"; continue; }
+            head -c 2 "$f" | grep -q PK || { rm -f "$f"; continue; }
+            base=$(basename "$f"); d="out/parts/$base"
+            mkdir -p "$d"
+            sha256sum "$f" | tee "$d/SHA256SUMS.txt"
+            stat -c%s "$f" | tee "$d/SIZE.txt"
+            split -b 7m -d -a 2 "$f" "$d/part-"
+            rm -f "$f"
+          done
+          find out -type f | sort
+
+      - name: Commit
+        run: |
+          git config user.name "bot"; git config user.email "bot@users.noreply.github.com"
+          git add -A out
+          git commit -m "apk v2" || echo nothing
+          git push
