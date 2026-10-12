@@ -1,0 +1,92 @@
+name: get-apk-v3
+
+on:
+  push:
+    branches: [apk-get3]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  get:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch candidates
+        run: |
+          mkdir -p out/parts out/diag
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+          # 检查一个 APK 是否可单独安装
+          check() {
+            f="$1"; [ -s "$f" ] || return 1
+            head -c 2 "$f" | grep -q PK || return 2
+            unzip -l "$f" 2>/dev/null | grep -q AndroidManifest.xml || return 3
+            if unzip -p "$f" AndroidManifest.xml 2>/dev/null | strings | grep -q requiredSplitTypes; then
+              echo "    -> 需要分片，不可单装"; return 4
+            fi
+            echo "    -> ✅ 可单独安装"; return 0
+          }
+
+          try() {
+            name="$1"; url="$2"
+            echo "=== $name"; echo "    $url"
+            code=$(curl -sSL -A "$UA" -o "out/$name.bin" -w '%{http_code}' --max-time 300 "$url" 2>/dev/null || echo ERR)
+            sz=$(stat -c%s "out/$name.bin" 2>/dev/null || echo 0)
+            echo "    HTTP $code size=$sz"
+            if [ "$sz" -lt 50000 ]; then echo "    太小，丢弃"; head -c 120 "out/$name.bin" | strings | head -2; rm -f "out/$name.bin"; return 1; fi
+            if check "out/$name.bin"; then mv "out/$name.bin" "out/GOOD_$name.apk"; return 0; fi
+            rm -f "out/$name.bin"; return 1
+          }
+
+          # --- 1) Aptoide API ---
+          curl -sL -A "$UA" --max-time 60 "https://ws75.aptoide.com/api/7/app/get/package_name=com.github.android" -o out/diag/aptoide.json || true
+          echo "aptoide.json=$(stat -c%s out/diag/aptoide.json 2>/dev/null || echo 0)"
+          python3 -c "
+import json
+try:
+    d=json.load(open('out/diag/aptoide.json'))
+    n=d.get('nodes',{}).get('meta',{}).get('data',{})
+    print(n.get('file',{}).get('path',''))
+except Exception as e: print('')
+" > out/diag/aptoide_url.txt
+          AU=$(cat out/diag/aptoide_url.txt)
+          [ -n "$AU" ] && try aptoide "$AU"
+
+          # --- 2) Uptodown ---
+          curl -sL -A "$UA" --max-time 60 "https://github-app.en.uptodown.com/android/download" -o out/diag/uptodown.html || true
+          echo "uptodown.html=$(stat -c%s out/diag/uptodown.html 2>/dev/null || echo 0)"
+          UD=$(grep -oE 'https://dw\.uptodown\.com/[^"'"'"' ]+' out/diag/uptodown.html | head -1)
+          [ -z "$UD" ] && UD=$(grep -oE 'data-url="[^"]+"' out/diag/uptodown.html | head -1 | sed 's/data-url="//;s/"//')
+          echo "UD=$UD"
+          [ -n "$UD" ] && try uptodown "$UD"
+
+          # --- 3) APKPure APK / XAPK ---
+          try apkpure_apk "https://d.apkpure.com/b/APK/com.github.android?version=latest"
+          curl -sSL -A "$UA" -o out/diag/xapk.raw -w 'xapk http=%{http_code}\n' --max-time 300 "https://d.apkpure.com/b/XAPK/com.github.android?version=latest" || true
+          echo "xapk.raw=$(stat -c%s out/diag/xapk.raw 2>/dev/null || echo 0)"
+          head -c 100 out/diag/xapk.raw | strings | head -3
+          if head -c 2 out/diag/xapk.raw 2>/dev/null | grep -q PK; then
+            unzip -l out/diag/xapk.raw | head -20 | tee out/diag/xapk_list.txt
+            mv out/diag/xapk.raw out/GOOD_bundle.xapk
+          fi
+
+          # --- 打包切分 ---
+          ls -la out/ | tee out/diag/final.txt
+          for f in out/GOOD_*.apk out/GOOD_*.xapk; do
+            [ -f "$f" ] || continue
+            b=$(basename "$f"); d="out/parts/$b"; mkdir -p "$d"
+            sha256sum "$f" | tee "$d/SHA256SUMS.txt"
+            stat -c%s "$f" | tee "$d/SIZE.txt"
+            split -b 7m -d -a 2 "$f" "$d/part-"
+            rm -f "$f"
+          done
+          find out/parts -type f | sort
+
+      - name: Commit
+        run: |
+          git config user.name "bot"; git config user.email "bot@users.noreply.github.com"
+          git add -A out
+          git commit -m "apk v3" || echo nothing
+          git push
