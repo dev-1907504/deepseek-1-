@@ -1,7 +1,4 @@
 # 签名材料与本地路径，绝不入库
-keystore.properties
-*.jks
-*.keystore
 local.properties
 .gradle/
 build/
@@ -11,8 +8,7 @@ app/build/
 /gh/
 /sdk/
 /x86root/
-/*.jks
-
+/
 # Python 缓存
 __pycache__/
 *.pyc
