@@ -5,7 +5,7 @@
 
   1) app/src/main/assets/persona/persona_verbatim.md   —— 原文照录（唯一真源）
   2) java/com/dreamgirl/app/persona/PersonaVerbatim.kt —— 由原文机械生成的 Kotlin 常量
-  3) /opt/dream/persona_expected.json                  —— 供校验脚本逐字比对
+  3) <项目根>/persona_expected.json              —— 供校验脚本逐字比对
 
 唯一的处理是：
   * 切片（2.1 节范围）
@@ -16,7 +16,7 @@
 """
 import json, hashlib, os, re, sys
 
-ROOT = "/opt/dream/dream-girl"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOC = os.path.join(ROOT, "docs", "设计方案.md")
 
 src = open(DOC, encoding="utf-8").read()
@@ -113,8 +113,16 @@ open(os.path.join(kd, "PersonaVerbatim.kt"), "w", encoding="utf-8").write("\n".j
 
 json.dump({"full": full, "segments": {k: segs[k] for k in SEG_ORDER},
            "sha256_full": hashlib.sha256(full.encode()).hexdigest()},
-          open("/opt/dream/persona_expected.json", "w", encoding="utf-8"),
+          open(os.path.join(ROOT, "persona_expected.json"), "w", encoding="utf-8"),
           ensure_ascii=False, indent=1)
+
+# 源文件基线：校验脚本靠它判断"设计方案.md 有没有被改过"。
+# 这里自动写，免得新机器上忘了生成 → preBuild 直接失败。
+_doc = os.path.join(ROOT, "docs", "设计方案.md")
+_src_sha = hashlib.sha256(open(_doc, "rb").read()).hexdigest()
+open(os.path.join(ROOT, "persona_source.sha256"), "w", encoding="utf-8").write(
+    _src_sha + "  设计方案.md\n")
+print("   源 sha256:", _src_sha[:16], "… → persona_source.sha256")
 
 print("OK 段落:", SEG_ORDER)
 for t in SEG_ORDER:

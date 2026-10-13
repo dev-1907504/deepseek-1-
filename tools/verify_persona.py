@@ -13,12 +13,12 @@
 """
 import hashlib, json, re, sys, os
 
-ROOT = "/opt/dream/dream-girl"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DOC = os.path.join(ROOT, "docs", "设计方案.md")
-EXPECT = "/opt/dream/persona_expected.json"
+EXPECT = os.path.join(ROOT, "persona_expected.json")
 KT = os.path.join(ROOT, "app/src/main/java/com/dreamgirl/app/persona/PersonaVerbatim.kt")
 ASSET = os.path.join(ROOT, "app/src/main/assets/persona/persona_verbatim.md")
-SRC_SHA = "/opt/dream/persona_source.sha256"
+SRC_SHA = os.path.join(ROOT, "persona_source.sha256")
 
 SEG_ORDER = ["名字", "形象", "性格", "见地", "信仰", "说话方式", "行为原则"]
 CONST_NAME = {"名字": "NAME", "形象": "IMAGE", "性格": "CHARACTER", "见地": "INSIGHT",

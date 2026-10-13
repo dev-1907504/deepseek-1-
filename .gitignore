@@ -12,3 +12,7 @@ app/build/
 /sdk/
 /x86root/
 /*.jks
+
+# Python 缓存
+__pycache__/
+*.pyc
